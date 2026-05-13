@@ -1,20 +1,4 @@
-"""
-app.py
-======
-The Legal Narrative Bias Explorer — final user-friendly version.
-
-5 tabs:
-    1. Search the Opinion
-    2. How Faithful is the Coverage?
-    3. How Did the Framing Change?
-    4. Compare News Articles
-    5. Whose Voice Does the Coverage Echo?
-
-This version removes the optional-feature toggles (stance detection,
-LLM-generated answers, LLM-as-judge) from the sidebar to keep the UI
-simple. The underlying code in src/ still supports them — they just
-default to off.
-"""
+"""Streamlit app: compare news coverage of a court ruling to the ruling itself."""
 from pathlib import Path
 import time
 
@@ -37,20 +21,17 @@ from src.comparison import analyze_one_article
 from src.justice_voice import detect_sections, voice_summary, section_texts_by_voice
 
 
-# ============================================================================
-# Friendly label maps
-# ============================================================================
 AXIS_FRIENDLY = {
     "Reason ↔ Emotion": "Analytical ↔ Emotional",
     "Abstract ↔ Concrete": "General concepts ↔ Specific people/places",
     "Passive ↔ Active": "Cautious wording ↔ Strong wording",
 }
 
-# Lean labels — long-form descriptions per user request
+# Lean labels (long-form descriptions)
 LEAN_LABELS = {
-    "left": "Left-leaning — Editorial board generally aligns with progressive/Democratic positions",
-    "center": "Center / wire service — Aims for neutral reporting; less editorial slant",
-    "right": "Right-leaning — Editorial board generally aligns with conservative/Republican positions",
+    "left": "Left-leaning, editorial board generally aligns with progressive/Democratic positions",
+    "center": "Center / wire service, aims for neutral reporting",
+    "right": "Right-leaning, editorial board generally aligns with conservative/Republican positions",
 }
 LEAN_VALUES = list(LEAN_LABELS.keys())
 LEAN_VALUES_BY_LABEL = {v: k for k, v in LEAN_LABELS.items()}
@@ -65,9 +46,6 @@ def friendly_axis(name: str) -> str:
     return AXIS_FRIENDLY.get(name, name)
 
 
-# ============================================================================
-# Page setup
-# ============================================================================
 st.set_page_config(
     page_title="Legal Narrative Bias Explorer",
     page_icon="⚖️",
@@ -82,9 +60,7 @@ st.caption(
 )
 
 
-# ============================================================================
 # Sidebar
-# ============================================================================
 with st.sidebar:
     st.header("Court Opinion")
 
@@ -95,7 +71,7 @@ with st.sidebar:
         st.markdown("**Or pick a previously uploaded case:**")
         names = [p.name for p in existing_pdfs]
         selected_existing = st.selectbox(
-            "Existing cases", options=["—"] + names, label_visibility="collapsed",
+            "Existing cases", options=["(none)"] + names, label_visibility="collapsed",
         )
 
     pdf_path = None
@@ -103,7 +79,7 @@ with st.sidebar:
         pdf_path = config.RAW_DIR / uploaded.name
         pdf_path.write_bytes(uploaded.getbuffer())
         st.success(f"Saved {uploaded.name}")
-    elif selected_existing and selected_existing != "—":
+    elif selected_existing and selected_existing != "(none)":
         pdf_path = config.RAW_DIR / selected_existing
 
     st.divider()
@@ -122,9 +98,6 @@ if pdf_path is None or not pdf_path.exists():
     st.stop()
 
 
-# ============================================================================
-# Cached resource loaders
-# ============================================================================
 @st.cache_resource(show_spinner=False)
 def get_retriever(pdf_path_str: str, _signature: str) -> Retriever:
     return Retriever(Path(pdf_path_str))
@@ -146,12 +119,10 @@ with st.spinner(f"Loading vector store for {pdf_path.name}…"):
     sig = file_hash(pdf_path)
     retriever = get_retriever(str(pdf_path), sig)
 
-st.success(f"📚 Loaded **{pdf_path.name}** — ready to analyze.")
+st.success(f"📚 Loaded **{pdf_path.name}**, ready to analyze.")
 
 
-# ============================================================================
 # Tabs
-# ============================================================================
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Search the Opinion",
     "How Faithful is the Coverage?",
@@ -161,14 +132,12 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 
-# ----------------------------------------------------------------------------
 # TAB 1: Search the Opinion
-# ----------------------------------------------------------------------------
 with tab1:
     st.subheader("Ask the opinion a question")
     st.caption(
-        "Type a question and we'll show you the parts of the ruling that best "
-        "match your question, with page numbers."
+        "Type a question. The app returns the parts of the ruling that best "
+        "match the question, with page numbers."
     )
 
     question = st.text_input(
@@ -181,21 +150,19 @@ with tab1:
         st.markdown(f"### Top {len(passages)} matches from the opinion")
         for i, p in enumerate(passages, 1):
             with st.expander(
-                f"**Match {i}** — page {p['page']} | relevance: {p['similarity']:.2f}",
+                f"**Match {i}** | page {p['page']} | relevance: {p['similarity']:.2f}",
                 expanded=(i <= 2),
             ):
                 st.markdown(p["text"])
 
 
-# ----------------------------------------------------------------------------
 # TAB 2: How Faithful is the Coverage?
-# ----------------------------------------------------------------------------
 with tab2:
     st.subheader("How factually faithful is the news coverage?")
     st.caption(
-        "Paste a news article. We'll find the sentences from the ruling that best "
-        "match what the article is saying, and measure how closely the article "
-        "wording matches those source sentences."
+        "Paste a news article. The app finds the sentences from the ruling that "
+        "best match what the article is saying, and measures how closely the "
+        "article wording matches those source sentences."
     )
 
     news_text = st.text_area(
@@ -258,13 +225,13 @@ with tab2:
             help="The few sentences in the ruling that, taken together, are the closest possible match to your news article."
         )
         col_b.metric(
-            "Faithfulness score (0 – 1)",
+            "Faithfulness score (0 to 1)",
             f"{result['rouge_news_vs_oracle']['rougeL']['f1']:.3f}",
             help="How closely the news article's wording matches the best-matching sentences from the ruling. Higher = more faithful."
         )
 
-        # Show statistics — collapsed by default
-        with st.expander("📊 Show statistics — detailed comparison breakdown"):
+        # Show statistics, collapsed by default
+        with st.expander("📊 Show statistics: detailed comparison breakdown"):
             st.markdown(
                 """
 **What this table shows**
@@ -344,9 +311,7 @@ A typical paraphrase pattern (what most centrist news coverage looks like) is wh
                     st.warning("Please enter an outlet name.")
 
 
-# ----------------------------------------------------------------------------
 # TAB 3: How Did the Framing Change?
-# ----------------------------------------------------------------------------
 with tab3:
     st.subheader("How did the framing change?")
     st.caption(
@@ -423,7 +388,7 @@ with tab3:
         relevance = st.session_state["tone_relevance"]
 
         if not relevance["is_relevant"]:
-            st.warning(f"{relevance['verdict']} — {relevance['suggestion']}")
+            st.warning(f"{relevance['verdict']}. {relevance['suggestion']}")
         else:
             st.success(relevance["verdict"])
 
@@ -457,7 +422,7 @@ with tab3:
         delta = emo_news["emotionality"] - emo_opinion["emotionality"]
         col_e3.metric("Shift (news vs. ruling)", f"{delta:+.4f}", delta=f"{delta:+.4f}")
 
-        # Chart — bar OR radar
+        # Chart: bar or radar
         if chart_style == "Bar chart":
             st.markdown("### Tone comparison (bar chart)")
             fig_bar = go.Figure()
@@ -512,9 +477,7 @@ with tab3:
                     st.warning("Please enter an outlet name.")
 
 
-# ----------------------------------------------------------------------------
 # TAB 4: Compare News Articles
-# ----------------------------------------------------------------------------
 with tab4:
     st.subheader("Compare news articles")
     st.caption(
@@ -673,7 +636,7 @@ with tab4:
                         marker_color=LEAN_COLORS.get(lean, "#9CA3AF"),
                     ))
                 fig_bar.update_layout(
-                    yaxis_title="Faithfulness score (0 – 1)",
+                    yaxis_title="Faithfulness score (0 to 1)",
                     xaxis_title="Outlet",
                     showlegend=True, height=400,
                 )
@@ -745,13 +708,11 @@ with tab4:
             )
 
 
-# ----------------------------------------------------------------------------
 # TAB 5: Whose Voice Does the Coverage Echo?
-# ----------------------------------------------------------------------------
 with tab5:
     st.subheader("Break the ruling into separate justice voices")
     st.caption(
-        "A Supreme Court ruling has multiple voices — the majority, concurrences, "
+        "A Supreme Court ruling has multiple voices: the majority, concurrences, "
         "and dissents. This tab separates them so you can compare their tone "
         "individually and see which voice the news coverage tends to match."
     )
@@ -866,9 +827,6 @@ with tab5:
                 st.plotly_chart(fig, use_container_width=True)
 
 
-# ============================================================================
-# Footer
-# ============================================================================
 st.divider()
 st.caption(
     "**Legal Narrative Bias Explorer** | \"Text As Data\" by Sheetal Sood."
